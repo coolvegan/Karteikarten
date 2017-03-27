@@ -1,0 +1,120 @@
+require 'mysql2'
+
+class Karte
+  def initialize(frage,antwort)
+    @frage = frage
+    @antwort = antwort
+  end
+
+  def getFrage
+    return @frage
+  end
+  def getAntwort
+    return @antwort
+  end
+
+end
+
+class Stapel
+  def initialize(name)
+    @name = name
+    @karten = []
+  end
+
+  def getStapelname
+    return @name
+  end
+
+  def neueKarte(frage,antwort)
+    karte = Karte.new(frage, antwort)
+    @karten << karte
+  end
+
+  def zeigStapel
+    @karten.each do |k|
+      puts k.getFrage
+      puts k.getAntwort
+    end
+  end
+
+  def getObj
+    return @karten
+  end
+  
+end
+
+class Speicher
+  def self.init
+    @client = Mysql2::Client.new(:host => "localhost", :username => "user", :password => "hardcodierenSux", :database => "lernkarten")
+  end
+
+  def self.close
+    @client.close
+  end
+
+  def self.load(obj, stapelname)
+      stm = @client.prepare("SELECT a.frage,a.antwort FROM karte as a join stapel as b ON b.id = a.sid WHERE b.name = ? ")
+      res = stm.execute(stapelname)
+      if res
+        res.each do |karte|
+         obj.neueKarte(karte['frage'],karte['antwort'])
+        end
+      end
+    self.close
+  end
+
+  def self.stapel
+    feld = []
+    stm = @client.prepare("SELECT name FROM stapel")
+    res = stm.execute
+    res.each do |zeile|
+      feld << zeile['name']
+    end
+    return feld
+  end
+
+
+  def self.store(obj, stapelname)
+      id = false
+      stm = @client.prepare("SELECT id FROM stapel where name = ?")
+      res = stm.execute(stapelname)
+     
+      #Stapel existiert, dann hole die ID
+      if res.first
+        id = res.first['id']
+      else
+      #Stapel existiert nicht, dann erstelle ihn und hole ID
+        @client.query("INSERT INTO stapel (name) VALUES ('#{stapelname}') ")
+        res = @client.query("SELECT LAST_INSERT_ID()")
+        id = res.first['LAST_INSERT_ID()']
+      end
+   
+    obj.each do |o|
+      stm = @client.prepare("SELECT count(id) as count FROM karte WHERE frage = ? AND antwort = ? AND sid = ?")
+      res = stm.execute(o.getFrage, o.getAntwort, id)
+      count = res.first['count'].to_i
+      if (count > 0)
+      else
+        stm = @client.prepare("INSERT INTO karte (frage, antwort, sid) VALUES (?, ? ,?) ")
+        res = stm.execute(o.getFrage,o.getAntwort,id)
+      end
+    end
+     self.close
+  end
+end
+
+
+stapel = Stapel.new("m")
+stapel.neueKarte("5+5=","10")
+stapel.neueKarte("1+5=","6")
+stapel.neueKarte("test", "erfolgreich")
+
+Speicher.init
+puts Speicher.stapel
+#stapel = Stapel.new("marco")
+#Speicher.load(stapel, "marco")
+#stapel.zeigStapel
+
+#speichern in database
+#Speicher.store(stapel.getObj, stapel.getStapelname)
+
